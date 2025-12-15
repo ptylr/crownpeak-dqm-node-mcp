@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  crownpeak-dqm-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: crownpeak-dqm-mcp:latest
+    container_name: crownpeak-dqm-mcp
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # Required: Set your Crownpeak DQM API key
+      - DQM_API_KEY=${DQM_API_KEY}
+
+      # Optional: Override default base URL
+      - DQM_API_BASE_URL=${DQM_API_BASE_URL:-https://developer.crownpeak.com/DQM/cms}
+
+      # Optional: Enable destructive operations
+      - ENABLE_DESTRUCTIVE_TOOLS=${ENABLE_DESTRUCTIVE_TOOLS:-false}
+
+      # HTTP server port
+      - PORT=3000
+
+      # Optional: Request timeout (ms)
+      - DQM_REQUEST_TIMEOUT=${DQM_REQUEST_TIMEOUT:-30000}
+
+      # Optional: Quality check polling configuration
+      - QUALITY_CHECK_MAX_POLLS=${QUALITY_CHECK_MAX_POLLS:-60}
+      - QUALITY_CHECK_POLL_INTERVAL=${QUALITY_CHECK_POLL_INTERVAL:-2000}
+
+      # Optional: Rate limiting
+      - MAX_CONCURRENT_QUALITY_CHECKS=${MAX_CONCURRENT_QUALITY_CHECKS:-3}
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/healthz', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
