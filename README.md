@@ -1,9 +1,19 @@
-# Crownpeak DQM MCP Server
+```
+        __          .__
+_______/  |_ ___.__.|  |_______
+\____ \   __<   |  ||  |\_  __ \
+|  |_> >  |  \___  ||  |_|  | \/
+|   __/|__|  / ____||____/__|
+|__|         \/
 
+https://ptylr.com
+https://www.linkedin.com/in/ptylr/
+```
+
+# Crownpeak DQM MCP Server
 A portable Model Context Protocol (MCP) server that wraps the Crownpeak DQM CMS REST API. This server exposes agent-friendly tools for quality checking, asset management, checkpoint monitoring, and more.
 
 ## Features
-
 - **Dual Transport Support**: Run as stdio (desktop clients) or HTTP server (cloud hosting)
 - **Production Ready**: TypeScript, error handling, rate limiting, request timeouts
 - **Docker Native**: Containerized deployment with health checks
@@ -14,13 +24,11 @@ A portable Model Context Protocol (MCP) server that wraps the Crownpeak DQM CMS 
 ## Quick Start
 
 ### Prerequisites
-
 - Node.js 20+
 - pnpm (recommended) or npm
 - Crownpeak DQM API key
 
 ### Installation
-
 ```bash
 # Clone repository
 git clone <repository-url>
@@ -35,13 +43,10 @@ cp .env.example .env
 # Edit .env and add your API key
 # DQM_API_KEY=your_api_key_here
 ```
-
 ### Build
-
 ```bash
 pnpm run build
 ```
-
 ## Usage
 
 ### Local Stdio Mode (Desktop Clients)
