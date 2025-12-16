@@ -406,7 +406,7 @@ All configuration via environment variables. See `.env.example` for all options.
 
 ### Optional
 
-- `DQM_API_BASE_URL`: Override base URL (default: `https://developer.crownpeak.com/DQM/cms`)
+- `DQM_API_BASE_URL`: Override base URL (default: `https://api.crownpeak.net/dqm-cms/v1`)
 - `PORT`: HTTP server port (default: `3000`)
 - `ENABLE_DESTRUCTIVE_TOOLS`: Enable delete operations (default: `false`)
 - `DQM_REQUEST_TIMEOUT`: Request timeout in ms (default: `30000`)

@@ -19,7 +19,7 @@ export function loadConfig(): DQMConfig {
 
   const config: DQMConfig = {
     apiKey,
-    baseUrl: process.env.DQM_API_BASE_URL || 'https://developer.crownpeak.com/DQM/cms',
+    baseUrl: process.env.DQM_API_BASE_URL || 'https://api.crownpeak.net/dqm-cms/v1',
     requestTimeout: parseInt(process.env.DQM_REQUEST_TIMEOUT || '30000', 10),
     enableDestructiveTools: process.env.ENABLE_DESTRUCTIVE_TOOLS === 'true',
     maxConcurrentQualityChecks: parseInt(process.env.MAX_CONCURRENT_QUALITY_CHECKS || '3', 10),

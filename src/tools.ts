@@ -76,6 +76,17 @@ export const getAssetIssuesTool = {
   }),
 };
 
+export const updateAssetTool = {
+  name: 'update_asset',
+  description: 'Update the content of an existing asset (URL or HTML)',
+  inputSchema: z.object({
+    assetId: z.string().describe('The ID of the asset to update'),
+    url: z.string().optional().describe('The new URL for the asset'),
+    html: z.string().optional().describe('The new HTML content for the asset'),
+    metadata: z.record(z.unknown()).optional().describe('Optional metadata for the asset'),
+  }),
+};
+
 // Quality Check Tool
 export const runQualityCheckTool = {
   name: 'run_quality_check',
@@ -91,9 +102,12 @@ export const runQualityCheckTool = {
 // Spellcheck Tool
 export const spellcheckAssetTool = {
   name: 'spellcheck_asset',
-  description: 'Run spellcheck on a specific asset',
+  description: 'Run spellcheck on an asset. Either provide an existing assetId, or provide websiteId + (url or html) to create a new asset first.',
   inputSchema: z.object({
-    assetId: z.string().describe('The ID of the asset to spellcheck'),
+    assetId: z.string().optional().describe('The ID of an existing asset to spellcheck'),
+    websiteId: z.string().optional().describe('The ID of the website (required if creating a new asset)'),
+    url: z.string().optional().describe('The URL to scan (if creating a new asset from a live page)'),
+    html: z.string().optional().describe('Raw HTML content to scan (if creating a new asset from HTML)'),
     language: z.string().optional().describe('Language code for spellcheck (e.g., en, es, fr)'),
   }),
 };
@@ -110,6 +124,7 @@ export const allTools = [
   getAssetTool,
   getAssetStatusTool,
   getAssetIssuesTool,
+  updateAssetTool,
   runQualityCheckTool,
   spellcheckAssetTool,
 ];
@@ -151,6 +166,13 @@ export async function handleToolCall(
     case 'get_asset_issues':
       return await client.getAssetIssues(args.assetId as string);
 
+    case 'update_asset':
+      return await client.updateAsset(args.assetId as string, {
+        url: args.url as string | undefined,
+        html: args.html as string | undefined,
+        metadata: args.metadata as Record<string, unknown> | undefined,
+      });
+
     case 'run_quality_check':
       return await client.runQualityCheck({
         websiteId: args.websiteId as string,
@@ -161,7 +183,10 @@ export async function handleToolCall(
 
     case 'spellcheck_asset':
       return await client.spellcheckAsset({
-        assetId: args.assetId as string,
+        assetId: args.assetId as string | undefined,
+        websiteId: args.websiteId as string | undefined,
+        url: args.url as string | undefined,
+        html: args.html as string | undefined,
         language: args.language as string | undefined,
       });
 
