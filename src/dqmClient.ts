@@ -98,6 +98,9 @@ export class DQMClient {
             statusCode: 408,
           } as APIError;
         }
+        // Log the fetch error details
+        console.error(`[DQM API] Fetch error:`, error.message);
+        console.error(`[DQM API] Error cause:`, (error as any).cause);
       }
       throw error;
     } finally {
@@ -213,6 +216,159 @@ export class DQMClient {
   }
 
   /**
+   * Get the content (HTML) for a specific asset
+   */
+  async getAssetContent(assetId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/content?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset content: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Get asset errors for a specific checkpoint
+   * Returns the asset's content highlighting issues for a given checkpoint
+   */
+  async getAssetErrors(assetId: string, checkpointId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/errors/${checkpointId}?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset errors: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Get asset content with all page highlightable issues (beta)
+   * Returns the asset's content with all page highlightable issues highlighted
+   */
+  async getAssetPageHighlight(assetId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/pagehighlight/all?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset page highlight: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Delete a specific asset
+   */
+  async deleteAsset(assetId: string): Promise<void> {
+    const url = `${this.config.baseUrl}/assets/${assetId}?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw {
+          message: `Failed to delete asset: ${response.statusText}`,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      // 204 No Content - no response body to parse
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
    * Create a new asset for quality checking
    */
   private async createAsset(params: {
@@ -248,14 +404,32 @@ export class DQMClient {
     html?: string;
     metadata?: Record<string, unknown>;
   }): Promise<Asset> {
+    // API expects form-encoded data, not JSON (same as POST /assets)
+    const formData = new URLSearchParams();
+
+    if (params.url) {
+      formData.append('content', params.url);
+    } else if (params.html) {
+      formData.append('content', params.html);
+    }
+
+    formData.append('contentType', 'text/html; charset=UTF-8');
+
+    if (params.metadata) {
+      formData.append('metadata', JSON.stringify(params.metadata));
+    }
+
     return await this.request<Asset>(`/assets/${assetId}`, {
       method: 'PUT',
-      body: JSON.stringify(params),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
     });
   }
 
   /**
-   * Run a quality check (create asset and poll until complete)
+   * Run a quality check (create asset and get results)
    */
   async runQualityCheck(params: QualityCheckRequest): Promise<QualityCheckResponse> {
     // Check concurrency limit
@@ -279,47 +453,17 @@ export class DQMClient {
 
       const debug: QualityCheckResponse['debug'] = {
         createResponse: asset,
-        statusResponses: [],
+        statusResponses: [asset],
       };
 
-      // Poll for completion
-      let pollCount = 0;
-      let currentAsset = asset;
-
-      console.error(`[DQM API] Polling for asset ${asset.id} to complete processing...`);
-
-      while (pollCount < this.config.qualityCheckMaxPolls) {
-        // Wait before polling (except on first iteration)
-        if (pollCount > 0) {
-          await this.sleep(this.config.qualityCheckPollInterval);
-        }
-
-        // Get current status
-        currentAsset = await this.getAssetStatus(asset.id);
-        debug.statusResponses?.push(currentAsset);
-
-        console.error(`[DQM API] Poll ${pollCount + 1}/${this.config.qualityCheckMaxPolls}: Asset status = ${currentAsset.status}`);
-
-        // Check if completed
-        if (currentAsset.status === 'completed' || currentAsset.status === 'failed') {
-          console.error(`[DQM API] Asset processing ${currentAsset.status}`);
-          break;
-        }
-
-        pollCount++;
-      }
-
-      // Get issues if completed
-      let issues: Issue[] = [];
-      if (currentAsset.status === 'completed') {
-        issues = await this.getAssetIssues(asset.id);
-        debug.issuesResponse = issues;
-      }
+      // Get issues
+      const issues = await this.getAssetIssues(asset.id);
+      debug.issuesResponse = issues;
 
       return {
-        status: currentAsset.status,
+        status: asset.status,
         assetId: asset.id,
-        score: currentAsset.score,
+        score: asset.score,
         issues: this.normalizeIssues(issues),
         debug,
       };
@@ -353,33 +497,6 @@ export class DQMClient {
       });
 
       assetId = asset.id;
-
-      // Wait for asset to be processed before spellchecking
-      let pollCount = 0;
-      let currentAsset = asset;
-
-      console.error(`[DQM API] Polling for asset ${assetId} to complete processing before spellcheck...`);
-
-      while (pollCount < this.config.qualityCheckMaxPolls) {
-        if (pollCount > 0) {
-          await this.sleep(this.config.qualityCheckPollInterval);
-        }
-
-        currentAsset = await this.getAssetStatus(assetId);
-
-        console.error(`[DQM API] Poll ${pollCount + 1}/${this.config.qualityCheckMaxPolls}: Asset status = ${currentAsset.status}`);
-
-        if (currentAsset.status === 'completed' || currentAsset.status === 'failed') {
-          console.error(`[DQM API] Asset processing ${currentAsset.status}`);
-          break;
-        }
-
-        pollCount++;
-      }
-
-      if (currentAsset.status !== 'completed') {
-        throw new Error(`Asset processing did not complete. Status: ${currentAsset.status}`);
-      }
     }
 
     const endpoint = `/assets/${assetId}/spellcheck${
@@ -403,10 +520,4 @@ export class DQMClient {
     }));
   }
 
-  /**
-   * Sleep helper for polling
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 }
