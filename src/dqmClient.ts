@@ -5,12 +5,8 @@
 import type {
   DQMConfig,
   Website,
-  ListWebsitesResponse,
   Checkpoint,
-  ListCheckpointsResponse,
   Asset,
-  SearchAssetsResponse,
-  AssetIssuesResponse,
   Issue,
   QualityCheckRequest,
   QualityCheckResponse,
@@ -37,7 +33,9 @@ export class DQMClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const url = `${this.config.baseUrl}${endpoint}`;
+    // Add API key as query parameter
+    const separator = endpoint.includes('?') ? '&' : '?';
+    const url = `${this.config.baseUrl}${endpoint}${separator}apiKey=${this.config.apiKey}`;
 
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -46,15 +44,30 @@ export class DQMClient {
     );
 
     try {
+      // Build headers
+      const headers = {
+        'x-api-key': this.config.apiKey,
+        // Only include Content-Type for requests with a body (POST/PUT)
+        ...(options.method && ['POST', 'PUT', 'PATCH'].includes(options.method)
+          ? { 'Content-Type': 'application/json' }
+          : {}),
+        ...options.headers,
+      };
+
+      // Log request details for debugging (stderr to avoid polluting stdio MCP)
+      console.error(`[DQM API] ${options.method || 'GET'} ${url}`);
+      console.error(`[DQM API] Headers:`, headers);
+      if (options.body) {
+        console.error(`[DQM API] Request body:`, options.body);
+      }
+
       const response = await fetch(url, {
         ...options,
-        headers: {
-          'x-api-key': this.config.apiKey,
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+        headers,
         signal: controller.signal,
       });
+
+      console.error(`[DQM API] Response status: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
         const error: APIError = {
@@ -66,10 +79,13 @@ export class DQMClient {
           const errorData = await response.json() as any;
           error.details = errorData;
           error.message = errorData.message || error.message;
-        } catch {
+          console.error(`[DQM API] Error details:`, JSON.stringify(errorData, null, 2));
+        } catch (parseError) {
           // If response is not JSON, use status text
+          console.error(`[DQM API] Could not parse error as JSON`);
         }
 
+        console.error(`[DQM API] Full error:`, error);
         throw error;
       }
 
@@ -82,6 +98,9 @@ export class DQMClient {
             statusCode: 408,
           } as APIError;
         }
+        // Log the fetch error details
+        console.error(`[DQM API] Fetch error:`, error.message);
+        console.error(`[DQM API] Error cause:`, (error as any).cause);
       }
       throw error;
     } finally {
@@ -93,8 +112,8 @@ export class DQMClient {
    * List all websites
    */
   async listWebsites(): Promise<Website[]> {
-    const response = await this.request<ListWebsitesResponse>('/websites');
-    return response.websites || [];
+    // API returns a plain array, not wrapped in an object
+    return await this.request<Website[]>('/websites');
   }
 
   /**
@@ -112,8 +131,8 @@ export class DQMClient {
       ? `/websites/${websiteId}/checkpoints`
       : '/checkpoints';
 
-    const response = await this.request<ListCheckpointsResponse>(endpoint);
-    return response.checkpoints || [];
+    // API returns a plain array, not wrapped in an object
+    return await this.request<Checkpoint[]>(endpoint);
   }
 
   /**
@@ -144,8 +163,8 @@ export class DQMClient {
     }
 
     const endpoint = `/assets${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
-    const response = await this.request<SearchAssetsResponse>(endpoint);
-    return response.assets || [];
+    // API returns a plain array, not wrapped in an object
+    return await this.request<Asset[]>(endpoint);
   }
 
   /**
@@ -164,12 +183,189 @@ export class DQMClient {
 
   /**
    * Get issues for a specific asset
+   * Uses the status endpoint which returns checkpoint test results
    */
   async getAssetIssues(assetId: string): Promise<Issue[]> {
-    const response = await this.request<AssetIssuesResponse>(
-      `/assets/${assetId}/issues`
+    const response = await this.request<any>(
+      `/assets/${assetId}/status`
     );
-    return this.normalizeIssues(response.issues || []);
+
+    // Extract issues from checkpoint results
+    // The status response contains checkpoint test results
+    const issues: Issue[] = [];
+
+    if (response.checkpoints && Array.isArray(response.checkpoints)) {
+      for (const checkpoint of response.checkpoints) {
+        if (checkpoint.passed === false || checkpoint.errors) {
+          const checkpointIssues = checkpoint.errors || [];
+          for (const error of checkpointIssues) {
+            issues.push({
+              id: error.id || `${checkpoint.id}-${issues.length}`,
+              severity: checkpoint.severity || 'error',
+              message: error.message || checkpoint.message || 'Quality check failed',
+              checkpointId: checkpoint.id,
+              checkpointName: checkpoint.name,
+              location: error.location,
+            });
+          }
+        }
+      }
+    }
+
+    return this.normalizeIssues(issues);
+  }
+
+  /**
+   * Get the content (HTML) for a specific asset
+   */
+  async getAssetContent(assetId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/content?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset content: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Get asset errors for a specific checkpoint
+   * Returns the asset's content highlighting issues for a given checkpoint
+   */
+  async getAssetErrors(assetId: string, checkpointId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/errors/${checkpointId}?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset errors: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Get asset content with all page highlightable issues (beta)
+   * Returns the asset's content with all page highlightable issues highlighted
+   */
+  async getAssetPageHighlight(assetId: string): Promise<string> {
+    // This endpoint returns plain text/HTML, not JSON
+    const url = `${this.config.baseUrl}/assets/${assetId}/pagehighlight/all?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        // Try to get error details from response
+        let errorMessage = `Failed to get asset page highlight: ${response.statusText}`;
+        try {
+          const errorData = await response.json() as any;
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If JSON parsing fails, use the default message
+        }
+
+        throw {
+          message: errorMessage,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Delete a specific asset
+   */
+  async deleteAsset(assetId: string): Promise<void> {
+    const url = `${this.config.baseUrl}/assets/${assetId}?apiKey=${this.config.apiKey}`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeout);
+
+    try {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'x-api-key': this.config.apiKey,
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw {
+          message: `Failed to delete asset: ${response.statusText}`,
+          statusCode: response.status,
+        } as APIError;
+      }
+
+      // 204 No Content - no response body to parse
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /**
@@ -181,14 +377,59 @@ export class DQMClient {
     html?: string;
     metadata?: Record<string, unknown>;
   }): Promise<Asset> {
+    // API expects form-encoded data, not JSON
+    const formData = new URLSearchParams();
+    formData.append('websiteId', params.websiteId);
+    formData.append('content', params.url || params.html || '');
+    formData.append('contentType', 'text/html; charset=UTF-8');
+
+    if (params.metadata) {
+      formData.append('metadata', JSON.stringify(params.metadata));
+    }
+
     return await this.request<Asset>('/assets', {
       method: 'POST',
-      body: JSON.stringify(params),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
     });
   }
 
   /**
-   * Run a quality check (create asset and poll until complete)
+   * Update an existing asset's content
+   */
+  async updateAsset(assetId: string, params: {
+    url?: string;
+    html?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<Asset> {
+    // API expects form-encoded data, not JSON (same as POST /assets)
+    const formData = new URLSearchParams();
+
+    if (params.url) {
+      formData.append('content', params.url);
+    } else if (params.html) {
+      formData.append('content', params.html);
+    }
+
+    formData.append('contentType', 'text/html; charset=UTF-8');
+
+    if (params.metadata) {
+      formData.append('metadata', JSON.stringify(params.metadata));
+    }
+
+    return await this.request<Asset>(`/assets/${assetId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+  }
+
+  /**
+   * Run a quality check (create asset and get results)
    */
   async runQualityCheck(params: QualityCheckRequest): Promise<QualityCheckResponse> {
     // Check concurrency limit
@@ -212,42 +453,17 @@ export class DQMClient {
 
       const debug: QualityCheckResponse['debug'] = {
         createResponse: asset,
-        statusResponses: [],
+        statusResponses: [asset],
       };
 
-      // Poll for completion
-      let pollCount = 0;
-      let currentAsset = asset;
-
-      while (pollCount < this.config.qualityCheckMaxPolls) {
-        // Wait before polling (except on first iteration)
-        if (pollCount > 0) {
-          await this.sleep(this.config.qualityCheckPollInterval);
-        }
-
-        // Get current status
-        currentAsset = await this.getAssetStatus(asset.id);
-        debug.statusResponses?.push(currentAsset);
-
-        // Check if completed
-        if (currentAsset.status === 'completed' || currentAsset.status === 'failed') {
-          break;
-        }
-
-        pollCount++;
-      }
-
-      // Get issues if completed
-      let issues: Issue[] = [];
-      if (currentAsset.status === 'completed') {
-        issues = await this.getAssetIssues(asset.id);
-        debug.issuesResponse = issues;
-      }
+      // Get issues
+      const issues = await this.getAssetIssues(asset.id);
+      debug.issuesResponse = issues;
 
       return {
-        status: currentAsset.status,
+        status: asset.status,
         assetId: asset.id,
-        score: currentAsset.score,
+        score: asset.score,
         issues: this.normalizeIssues(issues),
         debug,
       };
@@ -258,15 +474,36 @@ export class DQMClient {
 
   /**
    * Run spellcheck on an asset
+   * If assetId is not provided, creates a new asset first
    */
   async spellcheckAsset(params: SpellcheckRequest): Promise<SpellcheckResponse> {
-    const endpoint = `/assets/${params.assetId}/spellcheck${
+    let assetId = params.assetId;
+
+    // If no assetId provided, create asset first
+    if (!assetId) {
+      if (!params.websiteId) {
+        throw new Error('Either assetId or websiteId must be provided');
+      }
+
+      if (!params.url && !params.html) {
+        throw new Error('Either url or html must be provided when creating a new asset');
+      }
+
+      // Create the asset
+      const asset = await this.createAsset({
+        websiteId: params.websiteId,
+        url: params.url,
+        html: params.html,
+      });
+
+      assetId = asset.id;
+    }
+
+    const endpoint = `/assets/${assetId}/spellcheck${
       params.language ? `?language=${params.language}` : ''
     }`;
 
-    return await this.request<SpellcheckResponse>(endpoint, {
-      method: 'POST',
-    });
+    return await this.request<SpellcheckResponse>(endpoint);
   }
 
   /**
@@ -283,10 +520,4 @@ export class DQMClient {
     }));
   }
 
-  /**
-   * Sleep helper for polling
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
 }

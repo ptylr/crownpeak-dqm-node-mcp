@@ -4,6 +4,11 @@
  * Crownpeak DQM MCP Server - HTTP Entry Point
  */
 
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
+
 import express from 'express';
 import { DQMClient } from './dqmClient.js';
 import { loadConfig, validateConfig } from './config.js';

@@ -108,7 +108,11 @@ export interface QualityCheckResponse {
 
 // Spellcheck
 export interface SpellcheckRequest {
-  assetId: string;
+  // Either provide an existing assetId OR websiteId + (url or html) to create one
+  assetId?: string;
+  websiteId?: string;
+  url?: string;
+  html?: string;
   language?: string;
 }
 
