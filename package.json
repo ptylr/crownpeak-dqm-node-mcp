@@ -14,6 +14,7 @@
     "start:http": "node dist/http.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "tsx tests/integration/api-test.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit"

@@ -87,6 +87,39 @@ export const updateAssetTool = {
   }),
 };
 
+export const getAssetContentTool = {
+  name: 'get_asset_content',
+  description: 'Get the HTML content for a specific asset',
+  inputSchema: z.object({
+    assetId: z.string().describe('The ID of the asset'),
+  }),
+};
+
+export const getAssetErrorsTool = {
+  name: 'get_asset_errors',
+  description: 'Get asset errors for a specific checkpoint, with content highlighting the issues',
+  inputSchema: z.object({
+    assetId: z.string().describe('The ID of the asset'),
+    checkpointId: z.string().describe('The ID of the checkpoint to get errors for'),
+  }),
+};
+
+export const getAssetPageHighlightTool = {
+  name: 'get_asset_pagehighlight',
+  description: '(Beta) Get asset content with all page highlightable issues highlighted',
+  inputSchema: z.object({
+    assetId: z.string().describe('The ID of the asset'),
+  }),
+};
+
+export const deleteAssetTool = {
+  name: 'delete_asset',
+  description: 'Delete a specific asset from DQM storage',
+  inputSchema: z.object({
+    assetId: z.string().describe('The ID of the asset to delete'),
+  }),
+};
+
 // Quality Check Tool
 export const runQualityCheckTool = {
   name: 'run_quality_check',
@@ -125,6 +158,10 @@ export const allTools = [
   getAssetStatusTool,
   getAssetIssuesTool,
   updateAssetTool,
+  getAssetContentTool,
+  getAssetErrorsTool,
+  getAssetPageHighlightTool,
+  deleteAssetTool,
   runQualityCheckTool,
   spellcheckAssetTool,
 ];
@@ -172,6 +209,22 @@ export async function handleToolCall(
         html: args.html as string | undefined,
         metadata: args.metadata as Record<string, unknown> | undefined,
       });
+
+    case 'get_asset_content':
+      return await client.getAssetContent(args.assetId as string);
+
+    case 'get_asset_errors':
+      return await client.getAssetErrors(
+        args.assetId as string,
+        args.checkpointId as string
+      );
+
+    case 'get_asset_pagehighlight':
+      return await client.getAssetPageHighlight(args.assetId as string);
+
+    case 'delete_asset':
+      await client.deleteAsset(args.assetId as string);
+      return { success: true, message: 'Asset deleted successfully' };
 
     case 'run_quality_check':
       return await client.runQualityCheck({
