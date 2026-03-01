@@ -2,17 +2,18 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// Continuously spawns zombies ahead of the player vehicle for the duration of
-/// the game. Zombies appear individually, in side-by-side pairs, or in loose
-/// groups of 3-6. Roughly 40% travel toward the player (against traffic),
-/// the rest shuffle in the same direction.
+/// Continuously spawns zombie cyclists ahead of the player vehicle for the
+/// duration of the game. Cyclists appear individually, in side-by-side pairs
+/// (riding two abreast — as they do), or in larger peloton-style groups.
+/// Roughly 40% travel toward the player (oncoming); the rest ride in the
+/// same direction, obliviously hogging the road.
 ///
 /// Spawn interval tightens slightly over time to ramp up intensity.
 /// </summary>
 public class ZombieSpawner : MonoBehaviour
 {
     [Header("Prefabs")]
-    [Tooltip("One or more zombie prefabs — chosen at random each spawn.")]
+    [Tooltip("One or more ZombieOnBike prefabs — chosen at random each spawn.")]
     public GameObject[] zombiePrefabs;
 
     [Header("Spawn Distance & Road Layout")]

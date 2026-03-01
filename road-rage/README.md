@@ -1,9 +1,9 @@
-# Road Rage 🧟🚙
+# Road Rage 🧟🚴🚙
 
 A fast-paced, comedic 60-second iPhone game. You drive a diesel 4×4 in
-first-person view and plough through hordes of slow-moving zombies. Points are
-awarded as **cakes and coffees**. No blood, no gore — pure cartoon physics and
-stress relief.
+first-person view and plough through hordes of zombie cyclists on road bikes.
+Points are awarded as **cakes and coffees**. No blood, no gore — pure cartoon
+physics and stress relief.
 
 ---
 
@@ -12,12 +12,12 @@ stress relief.
 | Detail | Value |
 |---|---|
 | Session length | **60 seconds** |
-| Zombie speed | **15 mph (6.7 m/s)** |
-| Zombie direction | ~60% same as player, ~40% oncoming |
-| Spawn pattern | Solo, pairs, or groups of 4–6 |
+| Zombie cyclist speed | **15 mph (6.7 m/s)** |
+| Cyclist direction | ~60% same as player, ~40% oncoming |
+| Spawn pattern | Solo, two abreast, or peloton groups of 4–6 |
 | Scoring | +1 point per zombie; combo bonus (+3) for 3+ hits within 2 s |
 | Point display | 🍰 ☕ icons in HUD with running total |
-| On hit | Ragdoll launch + spin + tumble + slide — full comedy physics |
+| On hit | Zombie somersaults over the handlebars; bike skids and cartwheels separately |
 | End of game | Score, rank, leaderboard (local, top 20) |
 
 ---
@@ -53,15 +53,38 @@ restore packages listed in `Packages/manifest.json`.
 | Prefab | Notes |
 |---|---|
 | **Road segment** | Flat plane ~20 m long with road texture + kerbs. Assign to `RoadGenerator.roadSegmentPrefab`. |
-| **Zombie** | Humanoid model with Unity ragdoll rig (Rigidbody on each bone, root Collider for walking). Assign `ZombieController`. Must have an `Animator` component. |
+| **ZombieOnBike** | Hierarchy below. Root has `ZombieController` + single trigger `Collider`. Assign `bikePivot` and `bikeRigidbody` in Inspector. |
 | **Hit VFX** | Particle system — stars, cakes, confetti. Assign to `VehicleCollision.hitVFXPrefab`. |
 | **Score Popup** | UI prefab (RectTransform + CanvasGroup + TMP). Assign `ScorePopup`. |
 | **Leaderboard Entry** | Horizontal layout row. Assign `LeaderboardEntryUI`. |
 
+#### ZombieOnBike prefab hierarchy
+
+```
+ZombieOnBike          ← root: ZombieController, CapsuleCollider (trigger)
+├── ZombieCharacter   ← Animator + standard Unity ragdoll bones
+│   ├── Hips
+│   │   ├── Spine → Chest → Neck → Head
+│   │   ├── LeftUpperArm → LeftLowerArm → LeftHand
+│   │   ├── RightUpperArm → RightLowerArm → RightHand
+│   │   ├── LeftUpperLeg → LeftLowerLeg → LeftFoot
+│   │   └── RightUpperLeg → RightLowerLeg → RightFoot
+└── Bike              ← Rigidbody (Is Kinematic = true at start), MeshCollider
+    ├── Frame
+    ├── FrontWheel
+    ├── RearWheel
+    └── Handlebars
+```
+
+Assign `Bike` to `ZombieController.bikePivot` and its `Rigidbody` to
+`ZombieController.bikeRigidbody` in the prefab Inspector.
+
 ### 5 — Recommended Free Assets (Unity Asset Store)
 
-- **Zombie character pack** — search "zombie free" on the Asset Store for a
-  rigged humanoid with a walk cycle and ragdoll.
+- **Zombie character** — search "zombie free" for a rigged humanoid with a
+  ragdoll. Pose the arms in a "gripping handlebars" position in the Animator.
+- **Low-poly road bike** — search "low poly bicycle" or "road bike free" for
+  a simple bike mesh. Parent it under the ZombieOnBike root as the `Bike` child.
 - **Low-poly road kit** — search "low poly road" for a ready-made segment
   with lane markings and kerbs.
 - **Cartoon hit VFX** — search "cartoon particle effects" for stars / impact
@@ -96,8 +119,8 @@ Assets/Scripts/
 │   └── VehicleCollision.cs     # Detects zombie hits, triggers ragdoll + score
 │
 ├── Zombies/
-│   ├── ZombieController.cs     # Walk AI + ragdoll hit reaction
-│   └── ZombieSpawner.cs        # Procedural spawn (solo / pair / group, both directions)
+│   ├── ZombieController.cs     # Cycling AI + separated zombie/bike hit physics
+│   └── ZombieSpawner.cs        # Procedural spawn (solo / pair / peloton, both directions)
 │
 ├── Environment/
 │   └── RoadGenerator.cs        # Infinite road via object-pooled segments + roadside props
@@ -128,7 +151,7 @@ VehicleCollision ──RegisterHit──► GameManager
 | Idea | Where to change |
 |---|---|
 | Add tilt steering | `PlayerVehicle.ReadInput()` — use `Input.acceleration.x` |
-| Different zombie types (fast / slow) | Subclass `ZombieController` or expose `walkSpeed` on prefab |
+| Different zombie types (fast / slow) | Subclass `ZombieController` or expose `rideSpeed` on prefab |
 | Roadside hazards (potholes) | Add to `RoadGenerator.SpawnPropsForSegment()` |
 | Sound effects | Assign clips in `VehicleCollision.bumpSounds` |
 | Background music | Add `AudioSource` on `GameManager` GO |
